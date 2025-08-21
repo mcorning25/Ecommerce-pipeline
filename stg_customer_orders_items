@@ -1,0 +1,38 @@
+-- Staging table for raw customer data
+CREATE TABLE staging.raw_customers (
+    customer_id VARCHAR(50),
+    email VARCHAR(255),
+    first_name VARCHAR(100),
+    last_name VARCHAR(100),
+    registration_date TIMESTAMP,
+    country_code VARCHAR(2),
+    marketing_opt_in BOOLEAN,
+    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Staging table for raw orders
+CREATE TABLE staging.raw_orders (
+    order_id VARCHAR(50),
+    customer_id VARCHAR(50),
+    order_date TIMESTAMP,
+    order_status VARCHAR(50),
+    total_amount DECIMAL(10,2),
+    currency_code VARCHAR(3),
+    payment_method VARCHAR(50),
+    shipping_method VARCHAR(50),
+    discount_amount DECIMAL(10,2),
+    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Staging table for raw order items
+CREATE TABLE staging.raw_order_items (
+    order_item_id VARCHAR(50),
+    order_id VARCHAR(50),
+    product_id VARCHAR(50),
+    product_sku VARCHAR(100),
+    product_name VARCHAR(255),
+    category_name VARCHAR(100),
+    quantity INTEGER,
+    unit_price DECIMAL(10,2),
+    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
