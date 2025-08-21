@@ -1,0 +1,134 @@
+- ETL: Load Customer Dimension with SCD Type 2
+CREATE OR REPLACE FUNCTION etl.load_dim_customers() RETURNS VOID AS $$
+BEGIN
+    -- Close out changed records
+    UPDATE dim.customers 
+    SET valid_to = CURRENT_DATE - INTERVAL '1 day',
+        is_current = FALSE,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE is_current = TRUE
+    AND customer_id IN (
+        SELECT DISTINCT s.customer_id
+        FROM staging.raw_customers s
+        JOIN dim.customers d ON s.customer_id = d.customer_id
+        WHERE d.is_current = TRUE
+        AND (
+            COALESCE(s.email, '') != COALESCE(d.email, '') OR
+            COALESCE(s.first_name, '') != COALESCE(d.first_name, '') OR
+            COALESCE(s.last_name, '') != COALESCE(d.last_name, '') OR
+            COALESCE(s.country_code, '') != COALESCE(d.country_code, '') OR
+            COALESCE(s.marketing_opt_in, FALSE) != COALESCE(d.marketing_opt_in, FALSE)
+        )
+    );
+    
+    -- Insert new and changed records
+    INSERT INTO dim.customers (
+        customer_id, email, first_name, last_name, full_name,
+        country_code, country_name, marketing_opt_in, customer_segment,
+        registration_date, valid_from, valid_to, is_current
+    )
+    SELECT DISTINCT
+        s.customer_id,
+        s.email,
+        s.first_name,
+        s.last_name,
+        CONCAT(s.first_name, ' ', s.last_name) AS full_name,
+        s.country_code,
+        CASE s.country_code 
+            WHEN 'US' THEN 'United States'
+            WHEN 'CA' THEN 'Canada'
+            WHEN 'GB' THEN 'United Kingdom'
+            ELSE 'Other'
+        END AS country_name,
+        s.marketing_opt_in,
+        -- Simple segmentation logic
+        CASE 
+            WHEN order_summary.total_orders >= 10 THEN 'VIP'
+            WHEN order_summary.total_orders >= 5 THEN 'Loyal'
+            WHEN order_summary.total_orders >= 1 THEN 'Active'
+            ELSE 'New'
+        END AS customer_segment,
+        s.registration_date::DATE,
+        CURRENT_DATE AS valid_from,
+        NULL AS valid_to,
+        TRUE AS is_current
+    FROM staging.raw_customers s
+    LEFT JOIN (
+        SELECT 
+            customer_id,
+            COUNT(*) as total_orders
+        FROM staging.raw_orders 
+        GROUP BY customer_id
+    ) order_summary ON s.customer_id = order_summary.customer_id
+    WHERE NOT EXISTS (
+        SELECT 1 FROM dim.customers d 
+        WHERE d.customer_id = s.customer_id 
+        AND d.is_current = TRUE
+        AND COALESCE(s.email, '') = COALESCE(d.email, '')
+        AND COALESCE(s.first_name, '') = COALESCE(d.first_name, '')
+        AND COALESCE(s.last_name, '') = COALESCE(d.last_name, '')
+        AND COALESCE(s.country_code, '') = COALESCE(d.country_code, '')
+        AND COALESCE(s.marketing_opt_in, FALSE) = COALESCE(d.marketing_opt_in, FALSE)
+    );
+END;
+$$ LANGUAGE plpgsql;
+
+-- ETL: Load Product Dimension
+CREATE OR REPLACE FUNCTION etl.load_dim_products() RETURNS VOID AS $$
+BEGIN
+    INSERT INTO dim.products (
+        product_id, product_sku, product_name, category_name,
+        category_level_1, category_level_2, category_level_3, brand
+    )
+    SELECT DISTINCT
+        oi.product_id,
+        oi.product_sku,
+        oi.product_name,
+        oi.category_name,
+        -- Parse hierarchical categories (assuming format: "Electronics > Computers > Laptops")
+        SPLIT_PART(oi.category_name, ' > ', 1) AS category_level_1,
+        SPLIT_PART(oi.category_name, ' > ', 2) AS category_level_2,
+        SPLIT_PART(oi.category_name, ' > ', 3) AS category_level_3,
+        -- Extract brand from product name (simple logic)
+        SPLIT_PART(oi.product_name, ' ', 1) AS brand
+    FROM staging.raw_order_items oi
+    WHERE NOT EXISTS (
+        SELECT 1 FROM dim.products p 
+        WHERE p.product_id = oi.product_id
+    );
+END;
+$$ LANGUAGE plpgsql;
+
+-- ETL: Load Orders Fact Table
+CREATE OR REPLACE FUNCTION etl.load_fact_orders() RETURNS VOID AS $$
+BEGIN
+    INSERT INTO fact.orders (
+        order_id, customer_key, product_key, order_date_key,
+        quantity, unit_price, line_total, discount_amount, net_amount,
+        order_status, payment_method, shipping_method, currency_code
+    )
+    SELECT 
+        o.order_id,
+        c.customer_key,
+        p.product_key,
+        TO_CHAR(o.order_date, 'YYYYMMDD')::INTEGER AS order_date_key,
+        oi.quantity,
+        oi.unit_price,
+        oi.quantity * oi.unit_price AS line_total,
+        COALESCE(o.discount_amount * (oi.quantity * oi.unit_price) / o.total_amount, 0) AS discount_amount,
+        (oi.quantity * oi.unit_price) - COALESCE(o.discount_amount * (oi.quantity * oi.unit_price) / o.total_amount, 0) AS net_amount,
+        o.order_status,
+        o.payment_method,
+        o.shipping_method,
+        o.currency_code
+    FROM staging.raw_orders o
+    JOIN staging.raw_order_items oi ON o.order_id = oi.order_id
+    JOIN dim.customers c ON o.customer_id = c.customer_id AND c.is_current = TRUE
+    JOIN dim.products p ON oi.product_id = p.product_id
+    WHERE NOT EXISTS (
+        SELECT 1 FROM fact.orders f 
+        WHERE f.order_id = o.order_id 
+        AND f.product_key = p.product_key
+    );
+END;
+$$ LANGUAGE plpgsql;
