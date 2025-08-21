@@ -1,0 +1,49 @@
+
+-- models/marts/fact_orders.sql
+{{ config(materialized='table') }}
+
+with order_details as (
+    select
+        o.order_id,
+        o.customer_id,
+        o.order_date,
+        o.order_status,
+        o.payment_method,
+        o.shipping_method,
+        o.currency_code,
+        oi.product_id,
+        oi.product_sku,
+        oi.quantity,
+        oi.unit_price,
+        oi.quantity * oi.unit_price as line_total,
+        o.discount_amount * (oi.quantity * oi.unit_price) / o.total_amount as line_discount,
+        (oi.quantity * oi.unit_price) - (o.discount_amount * (oi.quantity * oi.unit_price) / o.total_amount) as net_line_total
+    from {{ ref('stg_orders') }} o
+    join {{ ref('stg_order_items') }} oi
+        on o.order_id = oi.order_id
+),
+
+fact_table as (
+    select
+        {{ dbt_utils.surrogate_key(['od.order_id', 'od.product_id']) }} as order_line_key,
+        od.order_id,
+        {{ dbt_utils.surrogate_key(['od.customer_id']) }} as customer_key,
+        {{ dbt_utils.surrogate_key(['od.product_id']) }} as product_key,
+        {{ dbt_utils.date_trunc('day', 'od.order_date') }} as order_date,
+        extract(year from od.order_date) * 10000 + 
+        extract(month from od.order_date) * 100 + 
+        extract(day from od.order_date) as order_date_key,
+        od.order_status,
+        od.payment_method,
+        od.shipping_method,
+        od.currency_code,
+        od.quantity,
+        od.unit_price,
+        od.line_total,
+        od.line_discount,
+        od.net_line_total,
+        current_timestamp as created_at
+    from order_details od
+)
+
+select * from fact_table
