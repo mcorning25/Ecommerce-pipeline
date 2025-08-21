@@ -1,0 +1,38 @@
+-- models/intermediate/int_customer_order_summary.sql
+{{ config(materialized='view') }}
+
+with customer_orders as (
+    select
+        customer_id,
+        count(*) as total_orders,
+        sum(total_amount) as total_spent,
+        avg(total_amount) as avg_order_value,
+        min(order_date) as first_order_date,
+        max(order_date) as last_order_date,
+        sum(case when order_status = 'completed' then 1 else 0 end) as completed_orders,
+        sum(case when order_status = 'cancelled' then 1 else 0 end) as cancelled_orders
+    from {{ ref('stg_orders') }}
+    group by customer_id
+),
+
+customer_segments as (
+    select
+        *,
+        current_date - last_order_date as days_since_last_order,
+        last_order_date - first_order_date as customer_lifespan_days,
+        case
+            when total_orders >= 10 and total_spent >= 1000 then 'VIP'
+            when total_orders >= 5 and total_spent >= 500 then 'Loyal'
+            when total_orders >= 2 then 'Regular'
+            when total_orders = 1 and days_since_last_order <= 90 then 'New'
+            else 'At Risk'
+        end as customer_segment,
+        case
+            when days_since_last_order <= 30 then 'Active'
+            when days_since_last_order <= 90 then 'Lapsed'
+            else 'Dormant'
+        end as activity_status
+    from customer_orders
+)
+
+select * from customer_segments
