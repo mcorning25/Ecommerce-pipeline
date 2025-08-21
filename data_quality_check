@@ -1,0 +1,51 @@
+-- Data quality checks table to log results
+CREATE TABLE data_quality.check_results (
+    check_id SERIAL PRIMARY KEY,
+    check_name VARCHAR(255),
+    table_name VARCHAR(255),
+    check_type VARCHAR(50), -- 'completeness', 'validity', 'consistency', 'uniqueness'
+    expected_result BOOLEAN,
+    actual_result BOOLEAN,
+    record_count INTEGER,
+    error_count INTEGER,
+    check_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    details TEXT
+);
+
+-- Data quality check function
+CREATE OR REPLACE FUNCTION data_quality.run_completeness_check(
+    p_table_name VARCHAR,
+    p_column_name VARCHAR,
+    p_threshold DECIMAL DEFAULT 0.95
+) RETURNS BOOLEAN AS $$
+DECLARE
+    total_count INTEGER;
+    null_count INTEGER;
+    completeness_ratio DECIMAL;
+    check_passed BOOLEAN;
+BEGIN
+    -- Calculate completeness ratio
+    EXECUTE format('SELECT COUNT(*) FROM %s', p_table_name) INTO total_count;
+    EXECUTE format('SELECT COUNT(*) FROM %s WHERE %s IS NULL', p_table_name, p_column_name) INTO null_count;
+    
+    completeness_ratio := (total_count - null_count)::DECIMAL / total_count;
+    check_passed := completeness_ratio >= p_threshold;
+    
+    -- Log results
+    INSERT INTO data_quality.check_results (
+        check_name, table_name, check_type, expected_result, actual_result, 
+        record_count, error_count, details
+    ) VALUES (
+        format('Completeness check: %s.%s', p_table_name, p_column_name),
+        p_table_name,
+        'completeness',
+        TRUE,
+        check_passed,
+        total_count,
+        null_count,
+        format('Completeness ratio: %.2f%%, Threshold: %.2f%%', completeness_ratio * 100, p_threshold * 100)
+    );
+    
+    RETURN check_passed;
+END;
+$$ LANGUAGE plpgsql;
