@@ -1,0 +1,54 @@
+-- Dimension: Customers with SCD Type 2 for tracking changes
+CREATE TABLE dim.customers (
+    customer_key SERIAL PRIMARY KEY,
+    customer_id VARCHAR(50) NOT NULL,
+    email VARCHAR(255),
+    first_name VARCHAR(100),
+    last_name VARCHAR(100),
+    full_name VARCHAR(255),
+    country_code VARCHAR(2),
+    country_name VARCHAR(100),
+    marketing_opt_in BOOLEAN,
+    customer_segment VARCHAR(50),
+    registration_date DATE,
+    -- SCD Type 2 fields
+    valid_from DATE NOT NULL,
+    valid_to DATE,
+    is_current BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Dimension: Products with hierarchical categories
+CREATE TABLE dim.products (
+    product_key SERIAL PRIMARY KEY,
+    product_id VARCHAR(50) NOT NULL,
+    product_sku VARCHAR(100),
+    product_name VARCHAR(255),
+    category_name VARCHAR(100),
+    category_level_1 VARCHAR(100),
+    category_level_2 VARCHAR(100),
+    category_level_3 VARCHAR(100),
+    brand VARCHAR(100),
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Dimension: Date dimension for time-based analysis
+CREATE TABLE dim.dates (
+    date_key INTEGER PRIMARY KEY,
+    full_date DATE NOT NULL,
+    year INTEGER,
+    quarter INTEGER,
+    month INTEGER,
+    month_name VARCHAR(20),
+    week INTEGER,
+    day_of_month INTEGER,
+    day_of_week INTEGER,
+    day_name VARCHAR(20),
+    is_weekend BOOLEAN,
+    is_holiday BOOLEAN,
+    fiscal_year INTEGER,
+    fiscal_quarter INTEGER
+);
