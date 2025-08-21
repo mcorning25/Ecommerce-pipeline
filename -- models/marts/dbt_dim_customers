@@ -1,0 +1,34 @@
+-- models/marts/dim_customers.sql
+{{ config(
+    materialized='table',
+    indexes=[
+      {'columns': ['customer_id'], 'unique': True},
+      {'columns': ['email'], 'unique': True},
+      {'columns': ['customer_segment']},
+    ]
+) }}
+
+select
+    {{ dbt_utils.surrogate_key(['c.customer_id']) }} as customer_key,
+    c.customer_id,
+    c.email,
+    c.first_name,
+    c.last_name,
+    c.full_name,
+    c.country_code,
+    c.country_name,
+    c.marketing_opt_in,
+    c.registration_date,
+    cos.customer_segment,
+    cos.activity_status,
+    cos.total_orders,
+    cos.total_spent,
+    cos.avg_order_value,
+    cos.first_order_date,
+    cos.last_order_date,
+    cos.days_since_last_order,
+    cos.customer_lifespan_days,
+    current_timestamp as updated_at
+from {{ ref('stg_customers') }} c
+left join {{ ref('int_customer_order_summary') }} cos
+    on c.customer_id = cos.customer_id
