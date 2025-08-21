@@ -1,0 +1,48 @@
+- models/staging/stg_customers.sql
+{{ config(materialized='table') }}
+
+with source_data as (
+    select
+        customer_id,
+        email,
+        first_name,
+        last_name,
+        registration_date,
+        country_code,
+        marketing_opt_in,
+        loaded_at
+    from {{ ref('raw_customers') }}
+),
+
+cleaned_data as (
+    select
+        trim(customer_id) as customer_id,
+        lower(trim(email)) as email,
+        trim(first_name) as first_name,
+        trim(last_name) as last_name,
+        registration_date,
+        upper(trim(country_code)) as country_code,
+        coalesce(marketing_opt_in, false) as marketing_opt_in,
+        loaded_at
+    from source_data
+    where customer_id is not null
+      and email is not null
+      and email like '%@%'
+),
+
+enriched_data as (
+    select
+        *,
+        concat(first_name, ' ', last_name) as full_name,
+        case country_code
+            when 'US' then 'United States'
+            when 'CA' then 'Canada'
+            when 'GB' then 'United Kingdom'
+            when 'DE' then 'Germany'
+            when 'FR' then 'France'
+            else 'Other'
+        end as country_name
+    from cleaned_data
+)
+
+select * from enriched_data
