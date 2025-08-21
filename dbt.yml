@@ -1,0 +1,72 @@
+-- dbt_project.yml
+name: 'ecommerce_analytics'
+version: '1.0.0'
+config-version: 2
+
+profile: 'ecommerce_analytics'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  ecommerce_analytics:
+    staging:
+      +materialized: table
+    intermediate:
+      +materialized: view
+    marts:
+      +materialized: table
+
+vars:
+  start_date: '2020-01-01'
+  end_date: '2024-12-31'
+
+---
+
+-- models/staging/stg_orders.sql
+{{ config(materialized='table') }}
+
+with source_data as (
+    select
+        order_id,
+        customer_id,
+        order_date,
+        order_status,
+        total_amount,
+        currency_code,
+        payment_method,
+        shipping_method,
+        discount_amount,
+        loaded_at
+    from {{ ref('raw_orders') }}
+),
+
+cleaned_data as (
+    select
+        trim(order_id) as order_id,
+        trim(customer_id) as customer_id,
+        order_date,
+        lower(trim(order_status)) as order_status,
+        total_amount,
+        upper(trim(currency_code)) as currency_code,
+        lower(trim(payment_method)) as payment_method,
+        lower(trim(shipping_method)) as shipping_method,
+        coalesce(discount_amount, 0) as discount_amount,
+        loaded_at
+    from source_data
+    where order_id is not null
+      and customer_id is not null
+      and order_date is not null
+      and total_amount >= 0
+)
+
+select * from cleaned_data
+
